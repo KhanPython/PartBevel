@@ -1,0 +1,14 @@
+{
+	"name": "Beveller",
+	"tree": {
+	  	"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+
+			"Plugin": {
+				"$className": "Folder",
+				"$path": "src"
+			}
+		}
+	}
+}
