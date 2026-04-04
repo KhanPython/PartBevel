@@ -1,78 +1,78 @@
 name: Publish Plugin
 
 on:
-    workflow_dispatch:
-    push:
-        branches: [main]
-        paths:
-            - "src/**"
-            - "plugin.project.json"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "plugin.project.json"
 
 env:
-    ASSET_ID: "97561975117097"
+  ASSET_ID: "97561975117097"
 
 jobs:
-    publish:
-        runs-on: ubuntu-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            - name: Install Rokit
-              uses: CompeyDev/setup-rokit@v0.1.2
+      - name: Install Rokit
+        uses: CompeyDev/setup-rokit@v0.1.2
 
-            - name: Build plugin
-              run: rojo build plugin.project.json -o Beveller.rbxm
+      - name: Build plugin
+        run: rojo build plugin.project.json -o Beveller.rbxm
 
-            - name: Upload to Roblox
-              run: |
-                  RESPONSE=$(curl -s -w "\n%{http_code}" \
-                    --location --request PATCH \
-                    "https://apis.roblox.com/assets/v1/assets/${{ env.ASSET_ID }}" \
-                    --header "x-api-key: ${{ secrets.ROBLOX_API_KEY }}" \
-                    --form "request={\"assetType\": \"Model\", \"assetId\": \"${{ env.ASSET_ID }}\"}" \
-                    --form "fileContent=@Beveller.rbxm;type=model/x-rbxm")
+      - name: Upload to Roblox
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            --location --request PATCH \
+            "https://apis.roblox.com/assets/v1/assets/${{ env.ASSET_ID }}" \
+            --header "x-api-key: ${{ secrets.ROBLOX_API_KEY }}" \
+            --form "request={\"assetType\": \"Plugin\", \"assetId\": \"${{ env.ASSET_ID }}\"}" \
+            --form "fileContent=@Beveller.rbxm;type=model/x-rbxm")
 
-                  HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-                  BODY=$(echo "$RESPONSE" | head -n -1)
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
 
-                  echo "HTTP Status: $HTTP_CODE"
-                  echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+          echo "HTTP Status: $HTTP_CODE"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
 
-                  if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-                    echo "::error::Upload failed with HTTP $HTTP_CODE"
-                    exit 1
-                  fi
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::Upload failed with HTTP $HTTP_CODE"
+            exit 1
+          fi
 
-                  # Extract operation ID for status check
-                  OPERATION_PATH=$(echo "$BODY" | jq -r '.path // empty')
-                  if [ -n "$OPERATION_PATH" ]; then
-                    echo "Operation: $OPERATION_PATH"
-                    echo "OPERATION_PATH=$OPERATION_PATH" >> "$GITHUB_ENV"
-                  fi
+          # Extract operation ID for status check
+          OPERATION_PATH=$(echo "$BODY" | jq -r '.path // empty')
+          if [ -n "$OPERATION_PATH" ]; then
+            echo "Operation: $OPERATION_PATH"
+            echo "OPERATION_PATH=$OPERATION_PATH" >> "$GITHUB_ENV"
+          fi
 
-            - name: Check operation status
-              if: env.OPERATION_PATH != ''
-              run: |
-                  for i in $(seq 1 10); do
-                    sleep 5
-                    RESULT=$(curl -s \
-                      "https://apis.roblox.com/assets/v1/${{ env.OPERATION_PATH }}" \
-                      --header "x-api-key: ${{ secrets.ROBLOX_API_KEY }}")
+      - name: Check operation status
+        if: env.OPERATION_PATH != ''
+        run: |
+          for i in $(seq 1 10); do
+            sleep 5
+            RESULT=$(curl -s \
+              "https://apis.roblox.com/assets/v1/${{ env.OPERATION_PATH }}" \
+              --header "x-api-key: ${{ secrets.ROBLOX_API_KEY }}")
 
-                    DONE=$(echo "$RESULT" | jq -r '.done // false')
-                    echo "Attempt $i — done: $DONE"
+            DONE=$(echo "$RESULT" | jq -r '.done // false')
+            echo "Attempt $i — done: $DONE"
 
-                    if [ "$DONE" = "true" ]; then
-                      echo "$RESULT" | jq .
-                      MODERATION_STATE=$(echo "$RESULT" | jq -r '.response.moderationResult.moderationState // empty')
-                      if [ "$MODERATION_STATE" = "MODERATION_STATE_REJECTED" ]; then
-                        echo "::error::Asset was rejected by moderation"
-                        exit 1
-                      fi
-                      echo "Plugin published successfully!"
-                      exit 0
-                    fi
-                  done
+            if [ "$DONE" = "true" ]; then
+              echo "$RESULT" | jq .
+              MODERATION_STATE=$(echo "$RESULT" | jq -r '.response.moderationResult.moderationState // empty')
+              if [ "$MODERATION_STATE" = "MODERATION_STATE_REJECTED" ]; then
+                echo "::error::Asset was rejected by moderation"
+                exit 1
+              fi
+              echo "Plugin published successfully!"
+              exit 0
+            fi
+          done
 
-                  echo "::warning::Operation did not complete within polling window"
+          echo "::warning::Operation did not complete within polling window"
