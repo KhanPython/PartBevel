@@ -4,3 +4,7 @@
 
 # VS Code files
 .vscode/*
+
+# Local build scripts
+watch-build.ps1
+build.project.json

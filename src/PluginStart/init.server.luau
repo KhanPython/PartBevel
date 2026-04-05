@@ -13,6 +13,7 @@ local StudioComponents = Components:FindFirstChild("StudioComponents")
 local ScrollFrame = require(StudioComponents.ScrollFrame)
 local MainButton = require(StudioComponents.MainButton)
 local Button = require(StudioComponents.Button)
+local Checkbox = require(StudioComponents.Checkbox)
 local Label = require(StudioComponents.Label)
 local LimitedTextInput = require(StudioComponents.LimitedTextInput)
 local Title = require(StudioComponents.Title)
@@ -20,7 +21,7 @@ local Title = require(StudioComponents.Title)
 local Fusion = require(Packages.Fusion)
 local Janitor = require(Packages.Janitor)
 
-local BevelOperations = require(script.BevelOperations)
+local RoundifyOperations = require(script.RoundifyOperations)
 
 local New = Fusion.New
 local Value = Fusion.Value
@@ -31,49 +32,50 @@ local Observer = Fusion.Observer
 local Computed = Fusion.Computed
 
 local widgetsEnabled = Value(false)
-local bevelRadius = Value(0.5)
+local roundifyRadius = Value(0.5)
+local unionOnBake = Value(false)
 local selectedParts = Value({}) -- raw BaseParts
-local selectedBevels = Value({}) -- existing bevelled Models
+local selectedRoundified = Value({}) -- existing rounded Models
 local pluginJanitor = Janitor.new()
 
-local BEVEL_ATTRIBUTES = { "BevelRadius", "BevelSourceSize", "BevelSourceCFrame" }
+local ROUNDIFY_ATTRIBUTES = { "RoundifyRadius", "RoundifySourceSize", "RoundifySourceCFrame" }
 
-local function isBevelModel(item: Instance): boolean
-	return item:IsA("Model") and item:GetAttribute("BevelRadius") ~= nil
+local function isRoundifyModel(item: Instance): boolean
+	return item:IsA("Model") and item:GetAttribute("RoundifyRadius") ~= nil
 end
 
-local function isBevelChild(item: Instance): boolean
+local function isRoundifyChild(item: Instance): boolean
 	local parent = item.Parent
-	return parent and isBevelModel(parent)
+	return parent and isRoundifyModel(parent)
 end
 
-local function isBevelPrimaryPart(item: Instance): boolean
+local function isRoundifyPrimaryPart(item: Instance): boolean
 	local parent = item.Parent
-	return parent and isBevelModel(parent) and parent.PrimaryPart == item
+	return parent and isRoundifyModel(parent) and parent.PrimaryPart == item
 end
 
 local function updateSelection()
 	local newSelection = Selection:Get()
-	local parts, bevels = {}, {}
+	local parts, roundified = {}, {}
 	local hasInvalidSelection = false
 
 	for _, item in ipairs(newSelection) do
-		if isBevelModel(item) then
-			table.insert(bevels, item)
-		elseif item:IsA("BasePart") and isBevelPrimaryPart(item) then
-			-- Primary part of a bevel model — treat as selecting the model
+		if isRoundifyModel(item) then
+			table.insert(roundified, item)
+		elseif item:IsA("BasePart") and isRoundifyPrimaryPart(item) then
+			-- Primary part of a roundify model — treat as selecting the model
 			local parent = item.Parent
 			local alreadyAdded = false
-			for _, b in ipairs(bevels) do
+			for _, b in ipairs(roundified) do
 				if b == parent then
 					alreadyAdded = true
 					break
 				end
 			end
 			if not alreadyAdded then
-				table.insert(bevels, parent)
+				table.insert(roundified, parent)
 			end
-		elseif isBevelChild(item) then
+		elseif isRoundifyChild(item) then
 			hasInvalidSelection = true
 		elseif item:IsA("BasePart") then
 			table.insert(parts, item)
@@ -82,65 +84,94 @@ local function updateSelection()
 
 	if hasInvalidSelection then
 		selectedParts:set({})
-		selectedBevels:set({})
+		selectedRoundified:set({})
 		return
 	end
 
 	selectedParts:set(parts)
-	selectedBevels:set(bevels)
+	selectedRoundified:set(roundified)
 
-	-- Pre-fill radius from the first selected bevel model
-	if #bevels > 0 and #parts == 0 then
-		local existingRadius = bevels[1]:GetAttribute("BevelRadius")
+	-- Pre-fill radius from the first selected roundify model
+	if #roundified > 0 and #parts == 0 then
+		local existingRadius = roundified[1]:GetAttribute("RoundifyRadius")
 		if existingRadius then
-			bevelRadius:set(existingRadius)
+			roundifyRadius:set(existingRadius)
 		end
 	end
 end
 
-local function doBevel()
+local function doRoundify()
 	local parts = selectedParts:get()
-	local bevels = selectedBevels:get()
-	local radius = bevelRadius:get()
+	local roundified = selectedRoundified:get()
+	local radius = roundifyRadius:get()
 
-	if #parts == 0 and #bevels == 0 then
+	if #parts == 0 and #roundified == 0 then
 		return
 	end
 
-	local recording = ChangeHistoryService:TryBeginRecording("Bevel", "Bevel Parts")
+	local recording = ChangeHistoryService:TryBeginRecording("Roundify", "Roundify Parts")
 	if not recording then
-		warn("Beveller: Could not begin ChangeHistory recording")
+		warn("RoundifyPart: Could not begin ChangeHistory recording")
 		return
 	end
 
 	local results = {}
 
-	-- Bevel raw parts
+	-- Roundify raw parts
 	for _, part in ipairs(parts) do
-		local model = BevelOperations.bevel(part, radius)
+		local model = RoundifyOperations.roundify(part, radius)
 		if model then
 			table.insert(results, model)
 		end
 	end
 
-	-- Re-bevel existing bevel models
-	for _, bevelModel in ipairs(bevels) do
-		local sourceCFrame = bevelModel:GetAttribute("BevelSourceCFrame")
+	-- Re-roundify existing rounded models
+	for _, roundifyModel in ipairs(roundified) do
+		local sourceCFrame = roundifyModel:GetAttribute("RoundifySourceCFrame")
 		if not sourceCFrame then
 			continue
 		end
 
-		local sample = bevelModel:FindFirstChildWhichIsA("BasePart")
+		local sample = roundifyModel:FindFirstChildWhichIsA("BasePart")
 		if not sample then
 			continue
 		end
 
-		-- Recompute size from the model's current bounding box
-		local modelCFrame, modelSize = bevelModel:GetBoundingBox()
+		-- Use stored RoundifySourceSize so user edits to the attribute are respected.
+		-- Fall back to bounding box if the attribute is missing.
+		local sourceSize = roundifyModel:GetAttribute("RoundifySourceSize")
+		local originalPrimarySize = roundifyModel:GetAttribute("RoundifyPrimaryPartSize")
+		local modelCFrame, modelSize = roundifyModel:GetBoundingBox()
+
+		local effectiveSize
+		local scale = 1
+		pcall(function()
+			scale = roundifyModel:GetScale()
+		end)
+
+		local primaryPart = roundifyModel.PrimaryPart
+		if sourceSize and originalPrimarySize and primaryPart then
+			-- Start from the stored source size, scaled by any model Scale tool usage
+			local scaledSource = sourceSize * scale
+			local scaledPrimary = originalPrimarySize * scale
+			-- Delta = how much the user resized the primary part beyond the scale
+			local delta = primaryPart.Size - scaledPrimary
+			effectiveSize = scaledSource + delta
+			-- Clamp each axis to a minimum so we never produce a zero/negative size
+			effectiveSize = Vector3.new(
+				math.max(effectiveSize.X, 0.05),
+				math.max(effectiveSize.Y, 0.05),
+				math.max(effectiveSize.Z, 0.05)
+			)
+		elseif sourceSize then
+			effectiveSize = sourceSize * scale
+		else
+			effectiveSize = modelSize
+		end
 
 		local tempPart = Instance.new("Part")
-		tempPart.Size = modelSize
-		tempPart.CFrame = modelCFrame
+		tempPart.Size = effectiveSize
+		tempPart.CFrame = if primaryPart then primaryPart.CFrame else modelCFrame
 		for _, prop in ipairs({
 			"Color",
 			"Material",
@@ -156,11 +187,11 @@ local function doBevel()
 		}) do
 			tempPart[prop] = sample[prop]
 		end
-		tempPart.Parent = bevelModel.Parent
+		tempPart.Parent = roundifyModel.Parent
 
-		bevelModel.Parent = nil
+		roundifyModel.Parent = nil
 
-		local newModel = BevelOperations.bevel(tempPart, radius)
+		local newModel = RoundifyOperations.roundify(tempPart, radius)
 		if newModel then
 			table.insert(results, newModel)
 		end
@@ -174,67 +205,114 @@ local function doBevel()
 end
 
 local function doBake()
-	local bevels = selectedBevels:get()
-	if #bevels == 0 then
+	local roundified = selectedRoundified:get()
+	if #roundified == 0 then
 		return
 	end
 
-	local recording = ChangeHistoryService:TryBeginRecording("Bake", "Bake Bevels")
+	local shouldUnion = unionOnBake:get()
+
+	local recording = ChangeHistoryService:TryBeginRecording("Bake", "Bake Rounded Parts")
 	if not recording then
-		warn("Beveller: Could not begin ChangeHistory recording")
+		warn("RoundifyPart: Could not begin ChangeHistory recording")
 		return
 	end
 
-	for _, bevelModel in ipairs(bevels) do
-		for _, attr in ipairs(BEVEL_ATTRIBUTES) do
-			bevelModel:SetAttribute(attr, nil)
+	local results = {}
+
+	for _, roundifyModel in ipairs(roundified) do
+		for _, attr in ipairs(ROUNDIFY_ATTRIBUTES) do
+			roundifyModel:SetAttribute(attr, nil)
+		end
+
+		if shouldUnion then
+			local parts = {}
+			for _, child in ipairs(roundifyModel:GetChildren()) do
+				if child:IsA("BasePart") then
+					table.insert(parts, child)
+				end
+			end
+
+			if #parts >= 2 then
+				local primary = table.remove(parts, 1)
+				local ok, unionPart = pcall(function()
+					return primary:UnionAsync(parts)
+				end)
+
+				if ok and unionPart then
+					unionPart.Name = roundifyModel.Name
+					unionPart.Parent = roundifyModel.Parent
+					roundifyModel.Parent = nil
+					table.insert(results, unionPart)
+				else
+					warn("RoundifyPart: UnionAsync failed for " .. roundifyModel.Name)
+					table.insert(results, roundifyModel)
+				end
+			elseif #parts == 1 then
+				local single = parts[1]
+				single.Name = roundifyModel.Name
+				single.Parent = roundifyModel.Parent
+				roundifyModel.Parent = nil
+				table.insert(results, single)
+			else
+				table.insert(results, roundifyModel)
+			end
+		else
+			table.insert(results, roundifyModel)
 		end
 	end
 
 	ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
+
+	if #results > 0 then
+		Selection:Set(results)
+	end
+
 	updateSelection()
 end
 
 local hasSelection = Computed(function()
-	return #selectedParts:get() > 0 or #selectedBevels:get() > 0
+	return #selectedParts:get() > 0 or #selectedRoundified:get() > 0
 end)
 
 local statusText = Computed(function()
 	local partCount = #selectedParts:get()
-	local bevelCount = #selectedBevels:get()
-	if partCount == 0 and bevelCount == 0 then
+	local roundifyCount = #selectedRoundified:get()
+	if partCount == 0 and roundifyCount == 0 then
 		return "No parts selected"
 	end
 	local segments = {}
 	if partCount > 0 then
 		table.insert(segments, partCount .. (partCount == 1 and " part" or " parts"))
 	end
-	if bevelCount > 0 then
-		table.insert(segments, bevelCount .. (bevelCount == 1 and " bevel" or " bevels"))
+	if roundifyCount > 0 then
+		table.insert(segments, roundifyCount .. (roundifyCount == 1 and " rounded" or " rounded"))
 	end
 	return table.concat(segments, ", ") .. " selected"
 end)
 
 do
 	local pluginToolbar = Toolbar({
-		Name = "Beveller",
+		Name = "RoundifyPart",
 	})
 
 	ToolbarButton({
 		Toolbar = pluginToolbar,
 		ClickableWhenViewportHidden = true,
-		Name = "Beveller",
-		ToolTip = "Open Beveller widget",
-		Image = "",
+		Name = "RoundifyPart",
+		ToolTip = "Open RoundifyPart widget",
+		Image = "rbxassetid://114446350843586",
 
 		[OnEvent("Click")] = function()
 			widgetsEnabled:set(not widgetsEnabled:get())
 		end,
 	})
 
+	local Constants = require(script.Constants)
+
 	Widget({
-		Id = "BevellerWidget",
-		Name = "Beveller",
+		Id = "RoundifyPartWidget",
+		Name = "RoundifyPart v" .. Constants.Version,
 
 		InitialDockTo = Enum.InitialDockState.Right,
 		InitialEnabled = false,
@@ -266,7 +344,7 @@ do
 
 			[Children] = {
 				Title({
-					Text = "Beveller",
+					Text = "Radius",
 					LayoutOrder = 1,
 				}),
 
@@ -278,7 +356,7 @@ do
 					OnChange = function(newText)
 						local num = tonumber(newText)
 						if num and num > 0 then
-							bevelRadius:set(num)
+							roundifyRadius:set(num)
 						end
 					end,
 				}),
@@ -290,30 +368,42 @@ do
 				}),
 
 				MainButton({
-					Text = "Bevel Selection",
+					Text = "Roundify Selection",
 					Size = UDim2.new(1, 0, 0, 30),
 					LayoutOrder = 4,
 					Enabled = hasSelection,
-					Activated = doBevel,
+					Activated = doRoundify,
+				}),
+
+				Title({
+					Text = "Baking",
+					LayoutOrder = 5,
+				}),
+
+				Checkbox({
+					Text = "Union result",
+					Value = unionOnBake,
+					Size = UDim2.new(1, 0, 0, 20),
+					LayoutOrder = 6,
 				}),
 
 				Button({
 					Text = "Bake Selection",
 					Size = UDim2.new(1, 0, 0, 30),
-					LayoutOrder = 5,
+					LayoutOrder = 7,
 					Enabled = Computed(function()
-						return #selectedBevels:get() > 0
+						return #selectedRoundified:get() > 0
 					end),
 					Activated = doBake,
 				}),
 
 				Label({
-					Text = "Bake removes bevel attributes placed by the plugin.",
+					Text = "Bake removes roundify attributes placed by the plugin.",
 					Size = UDim2.new(1, 0, 0, 30),
 					TextSize = 15,
 					TextWrapped = true,
 					TextColorStyle = Enum.StudioStyleGuideColor.DimmedText,
-					LayoutOrder = 6,
+					LayoutOrder = 8,
 				}),
 			},
 		}),
