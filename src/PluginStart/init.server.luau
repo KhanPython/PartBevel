@@ -14,6 +14,7 @@ local ScrollFrame = require(StudioComponents.ScrollFrame)
 local MainButton = require(StudioComponents.MainButton)
 local Button = require(StudioComponents.Button)
 local Checkbox = require(StudioComponents.Checkbox)
+local Dropdown = require(StudioComponents.Dropdown)
 local Label = require(StudioComponents.Label)
 local LimitedTextInput = require(StudioComponents.LimitedTextInput)
 local Title = require(StudioComponents.Title)
@@ -33,12 +34,13 @@ local Computed = Fusion.Computed
 
 local widgetsEnabled = Value(false)
 local roundifyRadius = Value(0.5)
+local roundingMode = Value("3D")
 local unionOnBake = Value(false)
 local selectedParts = Value({}) -- raw BaseParts
 local selectedRoundified = Value({}) -- existing rounded Models
 local pluginJanitor = Janitor.new()
 
-local ROUNDIFY_ATTRIBUTES = { "RoundifyRadius", "RoundifySourceSize", "RoundifySourceCFrame" }
+local ROUNDIFY_ATTRIBUTES = { "RoundifyRadius", "RoundifyMode", "RoundifySourceSize", "RoundifySourceCFrame" }
 
 local function isRoundifyModel(item: Instance): boolean
 	return item:IsA("Model") and item:GetAttribute("RoundifyRadius") ~= nil
@@ -91,12 +93,15 @@ local function updateSelection()
 	selectedParts:set(parts)
 	selectedRoundified:set(roundified)
 
-	-- Pre-fill radius from the first selected roundify model
+	-- Pre-fill radius and mode from the first selected roundify model
 	if #roundified > 0 and #parts == 0 then
 		local existingRadius = roundified[1]:GetAttribute("RoundifyRadius")
 		if existingRadius then
 			roundifyRadius:set(existingRadius)
 		end
+		local existingMode = roundified[1]:GetAttribute("RoundifyMode")
+		local Constants = require(script.Constants)
+		roundingMode:set(Constants.AxisToMode[existingMode or "3D"] or "3D")
 	end
 end
 
@@ -104,6 +109,8 @@ local function doRoundify()
 	local parts = selectedParts:get()
 	local roundified = selectedRoundified:get()
 	local radius = roundifyRadius:get()
+	local Constants = require(script.Constants)
+	local mode = Constants.ModeToAxis[roundingMode:get()] or "3D"
 
 	if #parts == 0 and #roundified == 0 then
 		return
@@ -119,7 +126,7 @@ local function doRoundify()
 
 	-- Roundify raw parts
 	for _, part in ipairs(parts) do
-		local model = RoundifyOperations.roundify(part, radius)
+		local model = RoundifyOperations.roundify(part, radius, mode)
 		if model then
 			table.insert(results, model)
 		end
@@ -191,7 +198,7 @@ local function doRoundify()
 
 		roundifyModel.Parent = nil
 
-		local newModel = RoundifyOperations.roundify(tempPart, radius)
+		local newModel = RoundifyOperations.roundify(tempPart, radius, mode)
 		if newModel then
 			table.insert(results, newModel)
 		end
@@ -361,36 +368,51 @@ do
 					end,
 				}),
 
+				Title({
+					Text = "Rounding Mode",
+					LayoutOrder = 3,
+				}),
+
+				Dropdown({
+					Options = Constants.RoundingModes,
+					Value = roundingMode,
+					OnSelected = function(selected)
+						roundingMode:set(selected)
+					end,
+					Size = UDim2.new(1, 0, 0, 25),
+					LayoutOrder = 4,
+				}),
+
 				Label({
 					Text = statusText,
 					Size = UDim2.new(1, 0, 0, 20),
-					LayoutOrder = 3,
+					LayoutOrder = 5,
 				}),
 
 				MainButton({
 					Text = "Roundify Selection",
 					Size = UDim2.new(1, 0, 0, 30),
-					LayoutOrder = 4,
+					LayoutOrder = 6,
 					Enabled = hasSelection,
 					Activated = doRoundify,
 				}),
 
 				Title({
 					Text = "Baking",
-					LayoutOrder = 5,
+					LayoutOrder = 7,
 				}),
 
 				Checkbox({
 					Text = "Union result",
 					Value = unionOnBake,
 					Size = UDim2.new(1, 0, 0, 20),
-					LayoutOrder = 6,
+					LayoutOrder = 8,
 				}),
 
 				Button({
 					Text = "Bake Selection",
 					Size = UDim2.new(1, 0, 0, 30),
-					LayoutOrder = 7,
+					LayoutOrder = 9,
 					Enabled = Computed(function()
 						return #selectedRoundified:get() > 0
 					end),
@@ -403,7 +425,7 @@ do
 					TextSize = 15,
 					TextWrapped = true,
 					TextColorStyle = Enum.StudioStyleGuideColor.DimmedText,
-					LayoutOrder = 8,
+					LayoutOrder = 10,
 				}),
 			},
 		}),

@@ -1,7 +1,21 @@
 return {
-	Version = "1.6.0",
+	Version = "1.7.0",
 	DefaultRadius = 0.5,
 	MinRadius = 0.05,
 	MaxRadius = 5,
 	RadiusStep = 0.05,
+
+	RoundingModes = { "3D", "X Axis", "Y Axis", "Z Axis" },
+	ModeToAxis = {
+		["3D"] = "3D",
+		["X Axis"] = "X",
+		["Y Axis"] = "Y",
+		["Z Axis"] = "Z",
+	},
+	AxisToMode = {
+		["3D"] = "3D",
+		["X"] = "X Axis",
+		["Y"] = "Y Axis",
+		["Z"] = "Z Axis",
+	},
 }
