@@ -178,20 +178,9 @@ local function doRoundify()
 
 		local tempPart = Instance.new("Part")
 		tempPart.Size = effectiveSize
-		tempPart.CFrame = if primaryPart then primaryPart.CFrame else modelCFrame
-		for _, prop in ipairs({
-			"Color",
-			"Material",
-			"MaterialVariant",
-			"Transparency",
-			"Reflectance",
-			"Anchored",
-			"CanCollide",
-			"CanQuery",
-			"CanTouch",
-			"CastShadow",
-			"CollisionGroup",
-		}) do
+		-- Use model pivot to preserve orientation (avoids rotated-cylinder axis issues)
+		tempPart.CFrame = roundifyModel:GetPivot()
+		for _, prop in RoundifyOperations.COPY_PROPERTIES do
 			tempPart[prop] = sample[prop]
 		end
 		tempPart.Parent = roundifyModel.Parent

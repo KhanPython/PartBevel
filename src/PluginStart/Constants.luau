@@ -1,8 +1,7 @@
 return {
-	Version = "1.7.0",
+	Version = "1.8.3",
 	DefaultRadius = 0.5,
 	MinRadius = 0.05,
-	MaxRadius = 5,
 	RadiusStep = 0.05,
 
 	RoundingModes = { "3D", "X Axis", "Y Axis", "Z Axis" },
