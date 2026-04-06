@@ -8,6 +8,7 @@ local PluginComponents = Components:FindFirstChild("PluginComponents")
 local Widget = require(PluginComponents.Widget)
 local Toolbar = require(PluginComponents.Toolbar)
 local ToolbarButton = require(PluginComponents.ToolbarButton)
+local UpdateBanner = require(PluginComponents.UpdateBanner)
 
 local StudioComponents = Components:FindFirstChild("StudioComponents")
 local ScrollFrame = require(StudioComponents.ScrollFrame)
@@ -339,6 +340,13 @@ do
 			}),
 
 			[Children] = {
+				-- UpdateBanner({
+				-- 	AssetId = Constants.PluginAssetId,
+				-- 	CurrentVersion = Constants.Version,
+				-- 	Enabled = widgetsEnabled,
+				-- 	LayoutOrder = 0,
+				-- }),
+
 				Title({
 					Text = "Radius",
 					LayoutOrder = 1,

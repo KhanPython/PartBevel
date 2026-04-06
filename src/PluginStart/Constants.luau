@@ -1,5 +1,6 @@
 return {
-	Version = "1.8.3",
+	Version = "1.8.7",
+	PluginAssetId = 75639054455678,
 	DefaultRadius = 0.5,
 	MinRadius = 0.05,
 	RadiusStep = 0.05,
