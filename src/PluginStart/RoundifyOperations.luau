@@ -72,6 +72,9 @@ end
 local function finalizeModel(model: Model, part: BasePart, cf: CFrame, r: number, primaryPart: BasePart?)
 	model:SetAttribute("RoundifyRadius", r)
 	if primaryPart then
+		-- Compensate for rotated cylinders / offset parts so Model:GetPivot() returns
+		-- the original CFrame (cf) instead of the PrimaryPart's rotated CFrame.
+		primaryPart.PivotOffset = primaryPart.CFrame:ToObjectSpace(cf)
 		model.PrimaryPart = primaryPart
 		model:SetAttribute("RoundifyPrimaryPartSize", primaryPart.Size)
 	end
