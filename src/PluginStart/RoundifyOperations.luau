@@ -142,6 +142,7 @@ function RoundifyOperations.roundify(part: BasePart, radius: number, mode: strin
 	local centerBox = nil
 	local placed = {}
 	local MERGE_THRESHOLD = r * 0.1
+	local MIN_DIM = 2 * MERGE_THRESHOLD
 
 	local function isDuplicate(key: string): boolean
 		if placed[key] then
@@ -151,8 +152,23 @@ function RoundifyOperations.roundify(part: BasePart, radius: number, mode: strin
 		return false
 	end
 
+	-- Edge offsets (snapped to 0 when negligible to avoid redundant coincident parts)
+	-- Computed before boxes so the snapped spans can clamp box dimensions.
+	local ox = snapOffset(X / 2 - r, MERGE_THRESHOLD)
+	local oy = snapOffset(Y / 2 - r, MERGE_THRESHOLD)
+	local oz = snapOffset(Z / 2 - r, MERGE_THRESHOLD)
+	local offsets = { X = ox, Y = oy, Z = oz }
+
+	-- Effective span per axis: diameter + 2*offset. When an offset is snapped to 0
+	-- the span equals diameter, preventing boxes from protruding past the rounding.
+	local span = {
+		X = diameter + 2 * ox,
+		Y = diameter + 2 * oy,
+		Z = diameter + 2 * oz,
+	}
+
 	-- Inner boxes
-	-- 3D: 3 boxes, each keeping one axis full and insetting the other two by diameter
+	-- 3D: 3 boxes, each keeping one axis at its effective span and insetting the others
 	-- 2D: 2 boxes, each insetting one perpendicular axis by diameter
 	local boxSizes = {}
 	if is2D then
@@ -162,12 +178,14 @@ function RoundifyOperations.roundify(part: BasePart, radius: number, mode: strin
 		end
 	else
 		for _, axis in ALL_AXES do
-			table.insert(boxSizes, size - (Vector3.one - UNIT[axis]) * diameter)
+			local kept = UNIT[axis] * span[axis]
+			local inset = (Vector3.one - UNIT[axis]) * diameter
+			table.insert(boxSizes, kept + (size - inset) * (Vector3.one - UNIT[axis]))
 		end
 	end
 
 	for _, boxSize in boxSizes do
-		if boxSize.X > MERGE_THRESHOLD and boxSize.Y > MERGE_THRESHOLD and boxSize.Z > MERGE_THRESHOLD then
+		if boxSize.X > MIN_DIM and boxSize.Y > MIN_DIM and boxSize.Z > MIN_DIM then
 			local key = makeKey(boxSize.X, boxSize.Y, boxSize.Z) .. "_BOX"
 			if not isDuplicate(key) then
 				local box = Instance.new("Part")
@@ -181,18 +199,12 @@ function RoundifyOperations.roundify(part: BasePart, radius: number, mode: strin
 		end
 	end
 
-	-- Edge offsets (snapped to 0 when negligible to avoid redundant coincident parts)
-	local ox = snapOffset(X / 2 - r, MERGE_THRESHOLD)
-	local oy = snapOffset(Y / 2 - r, MERGE_THRESHOLD)
-	local oz = snapOffset(Z / 2 - r, MERGE_THRESHOLD)
-	local offsets = { X = ox, Y = oy, Z = oz }
-
 	-- Edge cylinders
 	local cylAxes = if is2D then { roundingMode } else ALL_AXES
 	for _, axis in cylAxes do
 		local cfg = AXIS_CONFIG[axis]
 		local len = if is2D then size[axis] else size[axis] - diameter
-		if len > MERGE_THRESHOLD then
+		if len > MIN_DIM then
 			local p1, p2 = cfg.perps[1], cfg.perps[2]
 			for _, signs in SIGN_PAIRS do
 				local offset = UNIT[p1] * signs[1] * offsets[p1] + UNIT[p2] * signs[2] * offsets[p2]

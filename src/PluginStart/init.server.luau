@@ -179,13 +179,8 @@ local function doRoundify()
 
 		local tempPart = Instance.new("Part")
 		tempPart.Size = effectiveSize
-		--[[ 
-			Use WorldPivot instead of GetPivot() because GetPivot() returns the
-			PrimaryPart's CFrame when PrimaryPart is set, which includes the cylinder
-			rotation offset. WorldPivot stores the original unrotated CFrame and
-			tracks with model movement via the PrimaryPart relationship.
-		--]]
-		tempPart.CFrame = roundifyModel.WorldPivot
+
+		tempPart.CFrame = roundifyModel:GetPivot()
 		for _, prop in RoundifyOperations.COPY_PROPERTIES do
 			tempPart[prop] = sample[prop]
 		end
